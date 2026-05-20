@@ -49,139 +49,115 @@ export default function RekapAbsensiPage() {
   const [kelasData, setKelasData] = useState<KelasData[]>([]);
   const [loading, setIsLoading] = useState(false);
 
-  const [page, setPage] = useState<number>(1);
+  // States for input controls in the UI
+  const [search, setSearch] = useState<string>("");
   const [kelas, setKelas] = useState<string>("");
   const [status, setStatus] = useState<string>("");
-  const [month, setMonth] = useState<string>("");
-  const [year, setYear] = useState<string>("");
 
-  const isMountedRef = useRef(true);
+  // State to hold the applied filters that trigger API fetches
+  const [appliedFilters, setAppliedFilters] = useState({
+    search: "",
+    kelas: "",
+    status: "",
+  });
 
-  const fetchRekapAbsensi = useCallback(
-    async (currentPage: number) => {
+  const [page, setPage] = useState<number>(1);
+
+  // Debounce search input
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setAppliedFilters((prev) => {
+        if (prev.search === search) return prev;
+        setPage(1);
+        return { ...prev, search };
+      });
+    }, 500);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [search]);
+
+  // Fetch rekap absensi data when page or appliedFilters change
+  useEffect(() => {
+    let active = true;
+    const fetchRecap = async () => {
       setIsLoading(true);
       try {
         const params: any = {
-          page: currentPage,
+          page,
         };
-        if (kelas) params.kelas_id = kelas;
-        if (status) params.status = status;
-        if (month) params.month = month;
-        if (year) params.year = year;
+        if (appliedFilters.kelas) params.kelas_id = appliedFilters.kelas;
+        if (appliedFilters.status) params.status = appliedFilters.status;
+        if (appliedFilters.search) params.search = appliedFilters.search;
 
         const res = await absenRecap(params);
-        if (isMountedRef.current) {
+        if (active) {
           setRekap(res);
         }
       } catch (error) {
-        console.error(error);
+        console.error("Gagal memuat rekap absensi:", error);
       } finally {
-        if (isMountedRef.current) {
+        if (active) {
           setIsLoading(false);
         }
       }
-    },
-    [kelas, status, month, year],
-  );
+    };
 
-  const summaryRekap = useCallback(async () => {
-    try {
-      const params: any = {};
-      if (kelas) params.kelas_id = kelas;
-      if (status) params.status = status;
-      if (month) params.month = month;
-      if (year) params.year = year;
-
-      const res = await getSummary(params);
-      if (isMountedRef.current) {
-        setSummary(res?.data || res);
-      }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      if (isMountedRef.current) {
-        setIsLoading(false);
-      }
-    }
-  }, [kelas, status, month, year]);
-
-  const fetchKelas = async () => {
-    try {
-      const res = await getKelasNoPaginate();
-      if (isMountedRef.current) {
-        // Handle jika response adalah object dengan property data
-        const data = Array.isArray(res) ? res : res?.data || [];
-        setKelasData(data);
-      }
-    } catch (error) {
-      console.error(error);
-      if (isMountedRef.current) {
-        setKelasData([]);
-      }
-    } finally {
-      if (isMountedRef.current) {
-        setIsLoading(false);
-      }
-    }
-  };
-
-  useEffect(() => {
-    fetchKelas();
-    summaryRekap();
-    fetchRekapAbsensi(1);
+    fetchRecap();
 
     return () => {
-      isMountedRef.current = false;
+      active = false;
+    };
+  }, [page, appliedFilters]);
+
+  // Load initial static data (kelas list and static summary stats)
+  useEffect(() => {
+    let active = true;
+
+    const loadInitialData = async () => {
+      try {
+        const resKelas = await getKelasNoPaginate();
+        if (active) {
+          const data = Array.isArray(resKelas) ? resKelas : resKelas?.data || [];
+          setKelasData(data);
+        }
+
+        const resSummary = await getSummary();
+        if (active) {
+          setSummary(resSummary?.data || resSummary);
+        }
+      } catch (error) {
+        console.error("Gagal memuat data awal:", error);
+      }
+    };
+
+    loadInitialData();
+
+    return () => {
+      active = false;
     };
   }, []);
 
-  useEffect(() => {
-    if (page > 1 || rekap?.paginate?.current_page !== page) {
-      fetchRekapAbsensi(page);
-    }
-  }, [page, fetchRekapAbsensi]);
-
   const handleApplyFilters = () => {
     setPage(1);
-    fetchRekapAbsensi(1);
-    summaryRekap();
+    setAppliedFilters({
+      search,
+      kelas,
+      status,
+    });
   };
 
   const handleResetFilters = () => {
+    setSearch("");
     setKelas("");
     setStatus("");
-    setMonth("");
-    setYear("");
     setPage(1);
-
-    setIsLoading(true);
-
-    // Fetch recap dengan no filters
-    absenRecap({ page: 1 })
-      .then((res) => {
-        if (isMountedRef.current) {
-          setRekap(res);
-        }
-      })
-      .catch((err) => {
-        console.error(err);
-      });
-
-    // Fetch summary dengan no filters
-    getSummary({})
-      .then((res) => {
-        if (isMountedRef.current) {
-          setSummary(res?.data || res);
-        }
-      })
-      .catch((err) => {
-        console.error(err);
-      })
-      .finally(() => {
-        if (isMountedRef.current) {
-          setIsLoading(false);
-        }
-      });
+    setAppliedFilters({
+      search: "",
+      kelas: "",
+      status: "",
+    });
   };
 
   return (
@@ -214,34 +190,7 @@ export default function RekapAbsensiPage() {
 
       {/* Filter Section */}
       <div className="bg-white/90 backdrop-blur-md border border-slate-200/80 rounded-xl p-6 shadow-sm">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end">
-          <div className="space-y-1">
-            <label className="font-label-md text-on-surface-variant">
-              Periode Waktu
-            </label>
-            <select
-              className="w-full bg-surface-bright border border-outline-variant rounded-lg px-3 py-2 text-body-sm focus:ring-primary focus:border-primary"
-              onChange={(e) => {
-                const value = e.target.value;
-                if (value === "hari-ini") {
-                  const today = new Date();
-                  setMonth(String(today.getMonth() + 1));
-                  setYear(String(today.getFullYear()));
-                } else if (value === "bulan-ini") {
-                  const today = new Date();
-                  setMonth(String(today.getMonth() + 1));
-                  setYear(String(today.getFullYear()));
-                } else if (value === "reset") {
-                  setMonth("");
-                  setYear("");
-                }
-              }}
-            >
-              <option value="reset">Semua Periode</option>
-              <option value="hari-ini">Hari Ini</option>
-              <option value="bulan-ini">Bulan Ini</option>
-            </select>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
           <div className="space-y-1">
             <label className="font-label-md text-on-surface-variant">
               Pilih Kelas
@@ -277,21 +226,32 @@ export default function RekapAbsensiPage() {
               <option value="tidak hadir">Tidak Hadir</option>
             </select>
           </div>
-          <button
-            className="flex items-center justify-center gap-2 px-6 py-2.5 bg-surface-container-high text-on-surface rounded-lg font-label-md hover:bg-surface-container-highest transition-all"
-            onClick={handleApplyFilters}
-          >
-            {loading ? (
-              <span className="material-symbols-outlined text-[18px] animate-spin">
-                autorenew
-              </span>
-            ) : (
+          <div className="flex gap-3">
+            <button
+              className="flex-1 flex items-center justify-center gap-2 px-6 py-2.5 bg-surface-container-high text-on-surface border border-outline-variant rounded-lg font-label-md hover:bg-surface-container-highest transition-all active:scale-95"
+              onClick={handleResetFilters}
+            >
               <span className="material-symbols-outlined text-[18px]">
-                filter_list
+                restart_alt
               </span>
-            )}
-            Terapkan Filter
-          </button>
+              Reset Filter
+            </button>
+            <button
+              className="flex-1 flex items-center justify-center gap-2 px-6 py-2.5 bg-primary text-on-primary rounded-lg font-label-md hover:brightness-110 transition-all active:scale-95 shadow-md"
+              onClick={handleApplyFilters}
+            >
+              {loading ? (
+                <span className="material-symbols-outlined text-[18px] animate-spin">
+                  autorenew
+                </span>
+              ) : (
+                <span className="material-symbols-outlined text-[18px]">
+                  filter_list
+                </span>
+              )}
+              Terapkan Filter
+            </button>
+          </div>
         </div>
       </div>
 
@@ -453,6 +413,8 @@ export default function RekapAbsensiPage() {
                 className="bg-transparent border-none focus:ring-0 text-body-sm w-40 outline-none"
                 placeholder="Cari nama..."
                 type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
               />
             </div>
           </div>
@@ -486,7 +448,7 @@ export default function RekapAbsensiPage() {
             </thead>
             <tbody className="divide-y divide-outline-variant">
               {/* Row 1 */}
-              {rekap?.data.length > 0 ? (
+              {rekap && rekap.data && rekap.data.length > 0 ? (
                 rekap.data.map((item) => (
                   <tr
                     className="hover:bg-surface-container/30 transition-colors"
@@ -550,39 +512,22 @@ export default function RekapAbsensiPage() {
             Menampilkan <span className="font-bold">{rekap?.paginate.from || 0}-{rekap?.paginate.to || 0}</span> dari{" "}
             <span className="font-bold">{rekap?.paginate.total || 0}</span> data
           </p>
-          <div className="flex items-center gap-2">
-            <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-outline-variant hover:bg-surface-container transition-all"
-              disabled={page === 1}
+          <div className="flex items-center gap-1">
+            <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-outline-variant hover:bg-surface-container transition-all disabled:opacity-50"
+              disabled={!rekap || page <= 1}
               onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
             >
               <span className="material-symbols-outlined text-[18px]">
                 chevron_left
               </span>
             </button>
-            <button className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary text-on-primary font-bold text-xs">
-              1
-            </button>
-            <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-outline-variant hover:bg-surface-container text-xs"
-              disabled={page === 2}
-              onClick={() => setPage(2)}
-            >
-              2
-            </button>
-            <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-outline-variant hover:bg-surface-container text-xs"
-              disabled={page === 3}
-              onClick={() => setPage(3)}
-            >
-              3
-            </button>
-            <span className="text-secondary mx-1">...</span>
-            <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-outline-variant hover:bg-surface-container text-xs"
-              disabled={page === 25}
-              onClick={() => setPage(25)}
-            >
-              25
-            </button>
-            <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-outline-variant hover:bg-surface-container transition-all"
-              disabled={page === rekap?.paginate.last_page}
+            
+            <span className="px-4 text-secondary text-label-md">
+              Halaman {rekap?.paginate.current_page || 1} dari {rekap?.paginate.last_page || 1}
+            </span>
+
+            <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-outline-variant hover:bg-surface-container transition-all disabled:opacity-50"
+              disabled={!rekap || page >= rekap.paginate.last_page}
               onClick={() => setPage((prev) => Math.min(prev + 1, rekap?.paginate.last_page || 1))}
             >
               <span className="material-symbols-outlined text-[18px]">
