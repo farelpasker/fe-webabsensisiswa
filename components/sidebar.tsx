@@ -21,19 +21,32 @@ export default function SideBar({ open, setOpen }: { open: boolean, setOpen: (op
     const handleLogout = async () => {
       try {
         await logout();
-        localStorage.removeItem("token");
-        router.push('/');
       } catch (error) {
         console.error(error);
+      } finally {
+        localStorage.removeItem("token");
+        router.push('/');
       }
     }
 
     const menuItems = [
       {
         name: "Dashboard",
-        link: "/dashboard",
+        link: "/dashboard/admin",
         icon: "dashboard",
-        role: ["admin", "student", "teacher"],
+        role: ["admin"],
+      },
+      {
+        name: "Dashboard",
+        link: "/dashboard/student",
+        icon: "dashboard",
+        role: ["student"],
+      },
+      {
+        name: "Dashboard",
+        link: "/dashboard/teacher",
+        icon: "dashboard",
+        role: ["teacher"],
       },
       {
         name: "Absensi",
